@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using SiraUtil.Tools.FPFC;
 using UnityEngine;
@@ -10,9 +9,15 @@ namespace SquatToBegin.GameLogic {
 	class SquatChecker : ILateTickable, IDisposable, IInitializable {
 		public static bool enableOnNextSong = false;
 		static int forcedSquatsOnNextStart = 0;
+		/// <summary>
+		/// Set when restarting with EnableAfterRestart disabled so the next
+		/// StandardPlayer install skips arming the squat gate.
+		/// </summary>
+		static bool skipGateOnNextStart = false;
 
 		readonly AudioTimeSyncController atsc;
 		readonly PauseMenuManager pauseMenuManager;
+		readonly GameplayCoreSceneSetupData gameplayCoreSceneSetupData;
 
 		public bool allowPlay { get; private set; } = false;
 		public bool isActive { get; private set; } = false;
@@ -23,6 +28,7 @@ namespace SquatToBegin.GameLogic {
 
 		public SquatChecker(
 			AudioTimeSyncController atsc,
+			GameplayCoreSceneSetupData gameplayCoreSceneSetupData,
 			PlayerTransforms playerTransforms,
 			PauseMenuManager pauseMenuManager,
 			IFPFCSettings FPFCSettings,
@@ -37,6 +43,7 @@ namespace SquatToBegin.GameLogic {
 
 			this.pauseMenuManager = pauseMenuManager;
 			this.atsc = atsc;
+			this.gameplayCoreSceneSetupData = gameplayCoreSceneSetupData;
 
 			this.instructor = instructor;
 
@@ -49,9 +56,31 @@ namespace SquatToBegin.GameLogic {
 			forcedSquatsOnNextStart = 0;
 		}
 
+		public static void MarkFreshLevelStart() {
+			skipGateOnNextStart = false;
+		}
+
 		public bool ShouldSquat(bool enableOverride = false) {
-			if(forcedSquatsOnNextStart < 1 && ((!enableOnNextSong && !enableOverride) || Plugin.rng.NextDouble() >= Config.Instance.Chance)) {
+			// Pause-menu restart with EnableAfterRestart disabled: do not re-arm.
+			// The installed 1.44 build always-arms on StandardPlayer construct and
+			// stopped consulting enableOnNextSong, so EnableAfterRestart had no effect
+			// unless we carry an explicit skip across the scene replace.
+			if(!enableOverride && skipGateOnNextStart && forcedSquatsOnNextStart < 1) {
+				skipGateOnNextStart = false;
 				allowPlay = true;
+				Plugin.Log.Debug("Squat gate skipped after restart (EnableAfterRestart disabled).");
+				return false;
+			}
+
+			if(!enableOverride && forcedSquatsOnNextStart < 1 && gameplayCoreSceneSetupData.practiceSettings != null && !Config.Instance.EnableInPractice) {
+				allowPlay = true;
+				Plugin.Log.Debug("Squat gate skipped for practice mode.");
+				return false;
+			}
+
+			if(forcedSquatsOnNextStart < 1 && Plugin.rng.NextDouble() >= Config.Instance.Chance) {
+				allowPlay = true;
+				Plugin.Log.Debug("Squat gate skipped by configured chance.");
 				return false;
 			}
 
@@ -59,6 +88,7 @@ namespace SquatToBegin.GameLogic {
 				forcedSquatsOnNextStart : Math.Max(Config.Instance.SquatsNeeded, forcedSquatsOnNextStart);
 
 			allowPlay = false;
+			Plugin.Log.Info(string.Format("Squat gate armed; waiting for {0} squat{1}.", squatsNeeded, squatsNeeded == 1 ? "" : "s"));
 
 			return true;
 		}
@@ -68,9 +98,15 @@ namespace SquatToBegin.GameLogic {
 		}
 
 		private void PauseMenuManager_didPressRestartButtonEvent() {
-			if(!Config.Instance.EnableAfterRestart && squatsNeeded <= 0)
+			if(!Config.Instance.EnableAfterRestart && squatsNeeded <= 0) {
+				skipGateOnNextStart = true;
+				enableOnNextSong = false;
+				forcedSquatsOnNextStart = 0;
+				Plugin.Log.Debug("Restart with EnableAfterRestart disabled; next start will skip squat gate.");
 				return;
+			}
 
+			skipGateOnNextStart = false;
 			enableOnNextSong = true;
 			forcedSquatsOnNextStart = squatsNeeded;
 		}

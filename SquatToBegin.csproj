@@ -67,6 +67,9 @@
     <Reference Include="System.Data.DataSetExtensions"></Reference>
     <Reference Include="System.Data"></Reference>
     <Reference Include="System.Xml"></Reference>
+    <Reference Include="DataModels">
+      <HintPath>$(BeatSaberDir)\Beat Saber_Data\Managed\DataModels.dll</HintPath>
+    </Reference>
     <Reference Include="Main" Publicize="true">
       <HintPath>$(BeatSaberDir)\Beat Saber_Data\Managed\Main.dll</HintPath>
     </Reference>
